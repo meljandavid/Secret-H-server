@@ -11,6 +11,9 @@
 #include<memory>
 
 class Server {
+private:
+    const int PORT;
+
 protected:
     sf::TcpListener listener;
     sf::SocketSelector selector;
@@ -24,10 +27,13 @@ protected:
     std::string clientAskForAnswer(const std::string& clientName, const std::string& desc = "", float timeout = 0.f);
     std::unordered_map<std::string, int> clientAskCrowd(const std::vector<std::string>& people,
         const std::vector<std::string>& choices, const std::string& desc = "", float timeout = 0.f);
+    void clientInfo(const std::string& clientName, const std::string& msg);
+    void clientInfoGroup(const std::vector<std::string>& people, const std::string& msg);
+
     virtual void loop();
 
 public:
-	Server() {}
+	Server(int port = 53000) : PORT(port) {}
     ~Server();
 
     void start();
@@ -74,8 +80,8 @@ void Server::verifyConnections() {
 
 void Server::start() {
     listener.setBlocking(false);
-    if (listener.listen(53000) != sf::Socket::Done) {
-        std::cout << "Failed to init serever\n";
+    if (listener.listen(PORT) != sf::Socket::Done) {
+        std::cout << "Failed to init server\n";
         return;
     }
     else std::cout << "listening...\n";
@@ -223,4 +229,15 @@ std::unordered_map<std::string, int> Server::clientAskCrowd(const std::vector<st
     }
 
     return results;
+}
+
+void Server::clientInfo(const std::string& clientName, const std::string& msg) {
+    sf::Packet p;
+    p << "info" << msg;
+    clients[clientName]->send(p);
+}
+
+void Server::clientInfoGroup(const std::vector<std::string>& people, const std::string& msg) {
+    for (const std::string& p : people)
+        clientInfo(p, msg);
 }

@@ -20,32 +20,37 @@ public:
     void start();
 };
 
+
 void Client::loop() {
     while (true) {
         sf::Packet p;
+
+        // INCOMING REQUEST
         if (socket.receive(p) == sf::Socket::Status::Done) {
             std::string request;
             p >> request;
-            std::cout << "[" << request << "]";
 
             if (request == "ask") {
                 std::string type;
                 p >> type;
+
                 if (type == "choice") {
                     std::string desc;
                     p >> desc;
-                    if (desc.size() > 0) std::cout << desc << std::endl;
+                    if (desc.size() > 0) std::cout << desc << " ";
                     int argnum;
                     p >> argnum;
                     std::vector<std::string> args(argnum);
                     for (std::string& s : args) p >> s;
+                    for (const std::string& s : args) std::cout << s << " ";
 
                     sf::Packet resp;
-                    resp << 0;
+                    int ans = 0;
+                    std::cin >> ans;
+                    ans %= args.size();
+                    resp << ans;
                     socket.send(resp);
-
-                    for (std::string s : args) std::cout << s << " ";
-                    std::cout << "\nResponse sent\n";
+                    std::cout << "\nAnswer sent (" << args[ans] << ")\n\n";
                 }
                 else if (type == "answer") {
                     std::string desc;
@@ -57,7 +62,12 @@ void Client::loop() {
                     socket.send(p);
                     std::cout << "\nResponse sent\n";
                 }
-            }
+            } // ASK END
+            else if(request == "info") {
+                std::string msg;
+                p >> msg;
+                std::cout << msg << std::endl;
+            } // INFO END
         }
     }
 }
@@ -68,7 +78,10 @@ void Client::start() {
 
     sf::Socket::Status status = socket.connect(sf::IpAddress::getLocalAddress(), 53000);
 
-    if (status != sf::Socket::Done) std::cout << "connection failed\n";
+    if (status != sf::Socket::Done) {
+        std::cout << "connection failed\n";
+        return;
+    }
     else {
         sf::Packet p; p << nick;
         if (socket.send(p) != sf::Socket::Done) {
