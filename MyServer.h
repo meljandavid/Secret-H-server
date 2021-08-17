@@ -2,10 +2,11 @@
 #include"Server.h"
 #include<algorithm>
 #include<thread>
+#include<functional>
+#include<array>
 
 /*
 * TODO:
-* - implement checkNewLaw() -> rules
 * - managing left players (rejoin?) (game logic threadblocking)
 */
 
@@ -26,30 +27,21 @@ private:
 	// Game methods
 	virtual void loop() override;
 	void gameStart();
-	void gameRound();
+	void gameRound(std::string president);
 	void assignRoles();
 	void checkNewLaw(std::string law);
+	void prepareNextRound();
 
 	// Helper functions
 	std::string roleToString(Roles role);
 
-	struct Rules {
-		struct Rule {
-			int Liberals, Fascists;
-		};
-
-		static std::unordered_map<int, Rule> getRules() {
-			return {
-				{ 5,  {3,1} },
-				{ 6,  {4,1} },
-				{ 7,  {4,2} },
-				{ 8,  {5,2} },
-				{ 9,  {5,3} },
-				{ 10, {6,3} }
-			};
-		}
-
+	// Rule related
+	struct Rule {
+		int Liberals = 0, Fascists = 0;
+		std::vector<std::function<void()>> Actions;
 	};
+	std::unordered_map<int, Rule> generateRules();
+	std::unordered_map<int, Rule> rules;
 };
 
 void MyServer::loop() {
@@ -78,7 +70,8 @@ void MyServer::loop() {
 			break;
 
 		case GameStates::ROUND:
-			gameRound();
+			gameRound(president);
+			prepareNextRound();
 			break;
 
 		case GameStates::END: {
@@ -104,9 +97,11 @@ void MyServer::loop() {
 
 void MyServer::gameStart() {
 	std::cout << "Game starting...\n";
-	STATE = GameStates::ROUND;
 
-	// list of players' names
+	// declaring rules: players -> L, F, Action array
+	rules = generateRules();
+
+	// making a list of players' names
 	for (auto it = clients.begin(); it != clients.end(); it++) living.push_back(it->first);
 
 	assignRoles();
@@ -121,15 +116,15 @@ void MyServer::gameStart() {
 	president = living.front();
 
 	// lobby info
-	std::cout << "Players int the lobby:";
+	std::cout << "Players in the lobby:";
 	for (std::string s : living) std::cout << " " << s;
 	std::cout << std::endl;
 
 	STATE = GameStates::ROUND;
 }
 
-void MyServer::gameRound() {
-	std::cout << "\n[NEW ROUND]\n" << "The president is " << president << std::endl;
+void MyServer::gameRound(std::string president) {
+	std::cout << "\n[NEW ROUND]\n The president is " << president << std::endl;
 
 	living.erase(std::find(living.begin(), living.end(), president));
 
@@ -140,6 +135,12 @@ void MyServer::gameRound() {
 	std::cout << "[Yes=" << results["Yes"] << "] [No=" << results["No"] << "]\n";
 
 	if (results["No"] <= results["Yes"]) { // GOVERNMENT FORMED
+		// if Hitler was the chancellor
+		if (placedFascist >= 3 && roles[chancellor] == Roles::HITLER) {
+			clientInfoAll("Hitler was the chancellor!");
+			STATE = GameStates::END;
+		}
+
 		// CARD DRAFTING
 		std::vector<std::string> three;
 		if (cardptr < 2) {
@@ -169,7 +170,7 @@ void MyServer::gameRound() {
 	}
 	else { // ANARCHY
 		anarchy++;
-		std::cout << "Anarchy raied to " << anarchy << std::endl;
+		std::cout << "Anarchy raised to " << anarchy << std::endl;
 		if (anarchy == 3) {
 			std::string last = roleToString( cards.back() );
 			last == "Liberal" ? placedLiberal++ : placedFascist++;
@@ -180,8 +181,9 @@ void MyServer::gameRound() {
 			checkNewLaw(last);
 		}
 	}
+}
 
-	// Next player
+void MyServer::prepareNextRound() {
 	auto presptr = std::find(living.begin(), living.end(), president);
 	presptr++;
 	if (presptr == living.end()) presptr = living.begin();
@@ -192,7 +194,6 @@ void MyServer::assignRoles() {
 	std::random_shuffle(living.begin(), living.end());
 	
 	// Generating roles
-	auto rules = Rules::getRules();
 	for (int i = 0; i < rules[living.size()].Fascists; i++)
 		roles[living[i]] = Roles::FASCIST;
 	for (int i = 0; i < rules[living.size()].Liberals; i++)
@@ -220,7 +221,20 @@ void MyServer::assignRoles() {
 }
 
 void MyServer::checkNewLaw(std::string law) {
-	// TODO: implement new law-based actions AND check winning states
+	// TODO: implement placed law-based actions
+
+	if (placedLiberal == 5) {
+		std::string msg = "Liberals won!";
+		std::cout << msg << std::endl;
+		clientInfoAll(msg);
+		STATE = GameStates::END;
+	}
+	else if (placedFascist == 6) {
+		std::string msg = "Fascists won!";
+		std::cout << msg << std::endl;
+		clientInfoAll(msg);
+		STATE = GameStates::END;
+	}
 }
 
 std::string MyServer::roleToString(Roles role) {
@@ -238,4 +252,54 @@ std::string MyServer::roleToString(Roles role) {
 		break;
 	}
 	return "";
+}
+
+std::unordered_map<int, MyServer::Rule> MyServer::generateRules() {
+	// DEFINE ACTIONS
+
+	std::function<void()> noAction = []() {};
+
+	std::function<void()> investigate = [=]() {
+		std::string p = clientAskForChoice(president, living, "Choose a player to investigate!");
+		clientInfo(president, p + " is a " + roleToString(roles[p]));
+	};
+
+	std::function<void()> execution = [=]() {
+		std::string p = clientAskForChoice(president, living, "Choose a player to kill!");
+		clientInfoAll(president + " killed " + p + "!");
+		living.erase(std::find(living.begin(), living.end(), p));
+
+		if (roles[p] == Roles::HITLER) {
+			clientInfoAll("Hitler was killed");
+			STATE = GameStates::END;
+		}
+	};
+
+	std::function<void()> peekLaw = [=]() {
+		clientInfo(president, "The next law is " + roleToString(cards.back()));
+	};
+
+	std::function<void()> chooseNext = [=]() {
+		std::string p = clientAskForChoice(president, living, "Choose the next president!");
+		gameRound(p);
+	};
+
+	std::unordered_map<int, MyServer::Rule> rules = {
+		{ 5,  {3,1} },
+		{ 6,  {4,1} },
+		{ 7,  {4,2} },
+		{ 8,  {5,2} },
+		{ 9,  {5,3} },
+		{ 10, {6,3} }
+	};
+
+	rules[5].Actions = rules[6].Actions = 
+		{ noAction, noAction, noAction, peekLaw, execution, execution, noAction };
+	rules[7].Actions = rules[8].Actions = 
+		{ noAction, noAction, investigate, chooseNext, execution, execution, noAction };
+	rules[9].Actions = rules[10].Actions =
+		{ noAction, investigate, investigate, chooseNext, execution, execution, noAction };
+	
+
+	return rules;
 }

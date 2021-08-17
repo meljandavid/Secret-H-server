@@ -22,13 +22,6 @@ protected:
     void checkNewConnections();
     void verifyConnections();
     void clientLeft(const std::string& clientName);
-    std::string clientAskForChoice(const std::string& clientName,
-        const std::vector<std::string>& choices, const std::string& desc = "", float timeout = 0.f);
-    std::string clientAskForAnswer(const std::string& clientName, const std::string& desc = "", float timeout = 0.f);
-    std::unordered_map<std::string, int> clientAskCrowd(const std::vector<std::string>& people,
-        const std::vector<std::string>& choices, const std::string& desc = "", float timeout = 0.f);
-    void clientInfo(const std::string& clientName, const std::string& msg);
-    void clientInfoGroup(const std::vector<std::string>& people, const std::string& msg);
 
     virtual void loop();
 
@@ -37,6 +30,15 @@ public:
     ~Server();
 
     void start();
+
+    std::string clientAskForChoice(const std::string& clientName,
+        const std::vector<std::string>& choices, const std::string& desc = "", float timeout = 0.f);
+    std::string clientAskForAnswer(const std::string& clientName, const std::string& desc = "", float timeout = 0.f);
+    std::unordered_map<std::string, int> clientAskCrowd(const std::vector<std::string>& people,
+        const std::vector<std::string>& choices, const std::string& desc = "", float timeout = 0.f);
+    void clientInfo(const std::string& clientName, const std::string& msg);
+    void clientInfoGroup(const std::vector<std::string>& people, const std::string& msg);
+    void clientInfoAll(const std::string& msg);
 };
 
 
@@ -240,4 +242,9 @@ void Server::clientInfo(const std::string& clientName, const std::string& msg) {
 void Server::clientInfoGroup(const std::vector<std::string>& people, const std::string& msg) {
     for (const std::string& p : people)
         clientInfo(p, msg);
+}
+
+void Server::clientInfoAll(const std::string& msg) {
+    for (auto it = clients.begin();  it != clients.end(); it++)
+        clientInfo(it->first, msg);
 }
