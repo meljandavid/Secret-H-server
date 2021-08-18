@@ -3,11 +3,10 @@
 #include<algorithm>
 #include<thread>
 #include<functional>
-#include<array>
 
 /*
 * TODO:
-* - managing left players (rejoin?) (game logic threadblocking)
+* - managing left players (waiting for rejoin?) (game logic threadblocking)
 */
 
 class MyServer : public Server {
@@ -41,7 +40,7 @@ private:
 		std::vector<std::function<void()>> Actions;
 	};
 	std::unordered_map<int, Rule> generateRules();
-	std::unordered_map<int, Rule> rules;
+	Rule rule;
 };
 
 void MyServer::loop() {
@@ -99,7 +98,7 @@ void MyServer::gameStart() {
 	std::cout << "Game starting...\n";
 
 	// declaring rules: players -> L, F, Action array
-	rules = generateRules();
+	rule = generateRules()[clients.size()];
 
 	// making a list of players' names
 	for (auto it = clients.begin(); it != clients.end(); it++) living.push_back(it->first);
@@ -194,10 +193,10 @@ void MyServer::assignRoles() {
 	std::random_shuffle(living.begin(), living.end());
 	
 	// Generating roles
-	for (int i = 0; i < rules[living.size()].Fascists; i++)
+	for (int i = 0; i < rule.Fascists; i++)
 		roles[living[i]] = Roles::FASCIST;
-	for (int i = 0; i < rules[living.size()].Liberals; i++)
-		roles[ living[i + rules[living.size()].Fascists] ] = Roles::LIBERAL;
+	for (int i = 0; i < rule.Liberals; i++)
+		roles[ living[i + rule.Fascists] ] = Roles::LIBERAL;
 	roles[living.back()] = Roles::HITLER;
 
 	// select fascists
@@ -221,8 +220,6 @@ void MyServer::assignRoles() {
 }
 
 void MyServer::checkNewLaw(std::string law) {
-	// TODO: implement placed law-based actions
-
 	if (placedLiberal == 5) {
 		std::string msg = "Liberals won!";
 		std::cout << msg << std::endl;
@@ -235,9 +232,13 @@ void MyServer::checkNewLaw(std::string law) {
 		clientInfoAll(msg);
 		STATE = GameStates::END;
 	}
+	else {
+		if (law == "Fascist") rule.Actions[placedFascist]();
+		else rule.Actions[placedLiberal]();
+	}
 }
 
-std::string MyServer::roleToString(Roles role) {
+inline std::string MyServer::roleToString(Roles role) {
 	switch (role) {
 	case MyServer::Roles::LIBERAL:
 		return "Liberal";
@@ -255,16 +256,17 @@ std::string MyServer::roleToString(Roles role) {
 }
 
 std::unordered_map<int, MyServer::Rule> MyServer::generateRules() {
+	
 	// DEFINE ACTIONS
 
-	std::function<void()> noAction = []() {};
+	auto noAction = []() {};
 
-	std::function<void()> investigate = [=]() {
+	auto investigate = [=]() {
 		std::string p = clientAskForChoice(president, living, "Choose a player to investigate!");
 		clientInfo(president, p + " is a " + roleToString(roles[p]));
 	};
 
-	std::function<void()> execution = [=]() {
+	auto execution = [=]() {
 		std::string p = clientAskForChoice(president, living, "Choose a player to kill!");
 		clientInfoAll(president + " killed " + p + "!");
 		living.erase(std::find(living.begin(), living.end(), p));
@@ -275,15 +277,16 @@ std::unordered_map<int, MyServer::Rule> MyServer::generateRules() {
 		}
 	};
 
-	std::function<void()> peekLaw = [=]() {
+	auto peekLaw = [=]() {
 		clientInfo(president, "The next law is " + roleToString(cards.back()));
 	};
 
-	std::function<void()> chooseNext = [=]() {
+	auto chooseNext = [=]() {
 		std::string p = clientAskForChoice(president, living, "Choose the next president!");
 		gameRound(p);
 	};
 
+	// make rules
 	std::unordered_map<int, MyServer::Rule> rules = {
 		{ 5,  {3,1} },
 		{ 6,  {4,1} },

@@ -38,19 +38,29 @@ void Client::loop() {
                     std::string desc;
                     p >> desc;
                     if (desc.size() > 0) std::cout << desc << " ";
+
                     int argnum;
                     p >> argnum;
                     std::vector<std::string> args(argnum);
                     for (std::string& s : args) p >> s;
                     for (const std::string& s : args) std::cout << s << " ";
 
-                    sf::Packet resp;
-                    int ans = 0;
+                    std::string ans;
                     std::cin >> ans;
-                    ans %= args.size();
-                    resp << ans;
+
+                    int intValue;
+                    try {
+                        intValue = std::stoi(ans);
+                    }
+                    catch (const std::invalid_argument& ia) {
+                        intValue = std::find(args.begin(), args.end(), ans) - args.begin();
+                        intValue %= args.size();
+                    }
+
+                    sf::Packet resp;
+                    resp << intValue;
                     socket.send(resp);
-                    std::cout << "\nAnswer sent (" << args[ans] << ")\n\n";
+                    std::cout << "\nAnswer sent (" << args[intValue] << ")\n\n";
                 }
                 else if (type == "answer") {
                     std::string desc;
@@ -58,6 +68,11 @@ void Client::loop() {
                     if (desc.size() > 0) std::cout << desc << std::endl;
 
                     sf::Packet p;
+                    /*
+                    std::string ans;
+                    std::cin >> ans;
+                    p << ans;
+                    */
                     p << "My Custom Answer";
                     socket.send(p);
                     std::cout << "\nResponse sent\n";
