@@ -152,6 +152,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Client.h" />
+    <ClInclude Include="Log.h" />
+    <ClInclude Include="MyClient.h" />
     <ClInclude Include="MyServer.h" />
     <ClInclude Include="Server.h" />
   </ItemGroup>

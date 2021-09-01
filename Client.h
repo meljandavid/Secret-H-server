@@ -5,16 +5,29 @@
 #include<SFML/Network/IpAddress.hpp>
 #include<iostream>
 #include<vector>
+#include<functional>
 
 class Client {
 private:
     sf::TcpSocket socket;
     std::string nick;
 
+    std::function<int(const std::vector<std::string>& args, const std::string& desc)> onChoice;
+    std::function<std::string(const std::string& desc)> onAnswer;
+    std::function<void(const std::string& msg)> onMessage;
+
     void loop();
 
+protected:
+    void setOnChoice(std::function<int(const std::vector<std::string>& args,
+        const std::string& desc)> f) { onChoice = f; }
+
+    void setOnAnswer(std::function<std::string(const std::string& desc)> f) { onAnswer = f; }
+
+    void setOnMessage(std::function<void(const std::string& msg)> f) { onMessage = f; }
+
 public:
-	Client() {}
+    Client();
     ~Client();
 
     void start();
@@ -35,45 +48,26 @@ void Client::loop() {
                 p >> type;
 
                 if (type == "choice") {
-                    std::string desc;
-                    p >> desc;
-                    if (desc.size() > 0) std::cout << desc << " ";
-
                     int argnum;
                     p >> argnum;
                     std::vector<std::string> args(argnum);
                     for (std::string& s : args) p >> s;
-                    for (const std::string& s : args) std::cout << s << " ";
 
-                    std::string ans;
-                    std::cin >> ans;
-
-                    int intValue;
-                    try {
-                        intValue = std::stoi(ans);
-                    }
-                    catch (const std::invalid_argument& ia) {
-                        intValue = std::find(args.begin(), args.end(), ans) - args.begin();
-                        intValue %= args.size();
-                    }
+                    std::string desc;
+                    p >> desc;
 
                     sf::Packet resp;
-                    resp << intValue;
+                    int answer = onChoice(args, desc);
+                    resp << answer;
                     socket.send(resp);
-                    std::cout << "\nAnswer sent (" << args[intValue] << ")\n\n";
+                    std::cout << "\nAnswer sent (" << args[answer] << ")\n\n";
                 }
                 else if (type == "answer") {
                     std::string desc;
                     p >> desc;
-                    if (desc.size() > 0) std::cout << desc << std::endl;
 
                     sf::Packet p;
-                    /*
-                    std::string ans;
-                    std::cin >> ans;
-                    p << ans;
-                    */
-                    p << "My Custom Answer";
+                    p << onAnswer(desc);
                     socket.send(p);
                     std::cout << "\nResponse sent\n";
                 }
@@ -81,7 +75,7 @@ void Client::loop() {
             else if(request == "info") {
                 std::string msg;
                 p >> msg;
-                std::cout << msg << std::endl;
+                onMessage(msg);
             } // INFO END
         }
     }
@@ -116,6 +110,12 @@ void Client::start() {
 
         loop();
     }
+}
+
+Client::Client() {
+    onChoice = [](const std::vector<std::string>& args, const std::string& desc) { return 0; };
+    onAnswer = [](const std::string& desc) { return "My answer!"; };
+    onMessage = [](const std::string& msg) { };
 }
 
 Client::~Client() {

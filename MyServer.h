@@ -1,11 +1,14 @@
 #pragma once
 #include"Server.h"
+#include"Log.h"
 #include<algorithm>
 #include<thread>
 #include<functional>
+#include<cstdio>
 
 /*
 * TODO:
+* - prevchancellor crashes the server - why?
 * - managing left players (waiting for rejoin?) (game logic threadblocking)
 */
 
@@ -41,6 +44,8 @@ private:
 	};
 	std::unordered_map<int, Rule> generateRules();
 	Rule rule;
+public:
+	MyServer() { srand(time(0)); }
 };
 
 void MyServer::loop() {
@@ -53,7 +58,9 @@ void MyServer::loop() {
 
 			if (firstCicle) {
 				std::cin.get();
-				std::cout << "Press ENTER to start the game\n";
+				Log::write("Press ");
+				Log::write("ENTER", Log::Colors::INVERTED);
+				Log::writeLine(" to start the game");
 				firstCicle = false;
 
 				std::thread t( [=]() {
@@ -74,15 +81,28 @@ void MyServer::loop() {
 			break;
 
 		case GameStates::END: {
-			std::string msg = "Secret roles:\n";
-			for (const auto& r : roles) msg += r.first + " was " + roleToString(r.second) + "\n";
-			std::cout << msg << std::endl;
+			static bool firstEnd = false;
 
-			std::vector<std::string> all;
-			for (auto it = clients.begin(); it != clients.end(); it++)
-				all.push_back(it->first);
+			if (!firstEnd) {
+				firstEnd = true;
+				std::string msg = "Secret roles:\n";
 
-			clientInfoGroup(all, msg);
+				for (const auto& r : roles) {
+					msg += r.first + " was " + roleToString(r.second) + "\n";
+					Log::write(r.first + " was ");
+					Log::writeLine(
+						roleToString(r.second),
+						r.second == Roles::LIBERAL ? Log::Colors::BLUE : Log::Colors::RED
+					);
+				}
+				Log::writeLine();
+
+				std::vector<std::string> all;
+				for (auto it = clients.begin(); it != clients.end(); it++)
+					all.push_back(it->first);
+
+				clientInfoGroup(all, msg);
+			}
 
 			break;
 		}
@@ -95,13 +115,19 @@ void MyServer::loop() {
 }
 
 void MyServer::gameStart() {
-	std::cout << "Game starting...\n";
+	Log::writeLine("game starting...");
 
 	// declaring rules: players -> L, F, Action array
 	rule = generateRules()[clients.size()];
 
 	// making a list of players' names
 	for (auto it = clients.begin(); it != clients.end(); it++) living.push_back(it->first);
+
+	// lobby info
+	Log::writeLine();
+	Log::write("Players in the lobby: ");
+	for (const std::string& s : living) Log::write(" " + s);
+	Log::writeLine();
 
 	assignRoles();
 
@@ -114,30 +140,53 @@ void MyServer::gameStart() {
 
 	president = living.front();
 
-	// lobby info
-	std::cout << "Players in the lobby:";
-	for (std::string s : living) std::cout << " " << s;
-	std::cout << std::endl;
-
 	STATE = GameStates::ROUND;
 }
 
 void MyServer::gameRound(std::string president) {
-	std::cout << "\n[NEW ROUND]\n The president is " << president << std::endl;
+	// Print some useful game-related data
+	Log::writeLine();
+	Log::write("[NEW ROUND]", Log::Colors::INVERTED);
+	Log::write(" Anarchy:" + std::to_string(anarchy) + " ");
+	Log::write("[" + std::to_string(placedFascist) + "]", Log::Colors::RED);
+	Log::write(" ");
+	Log::writeLine("[" + std::to_string(placedLiberal) + "]", Log::Colors::BLUE);
+	Log::writeLine( "The president is " + president );
 
+	// removing the president and the previous chancellor
 	living.erase(std::find(living.begin(), living.end(), president));
+	/*
+	std::string prevchancellor = chancellor;
+	auto cptr = std::find(living.begin(), living.end(), prevchancellor);
+	if (cptr != living.end()) living.erase(cptr);
+	*/
 
 	chancellor = clientAskForChoice(president, living, "Choose a chancellor!");
-	std::cout << "The chancellor is " << chancellor << ", Vote results: ";
+	Log::write( "The chancellor is " + chancellor + ", Vote results: ");
+
 	living.push_back(president);
+	/*
+	if (std::find(living.begin(), living.end(), prevchancellor) == living.end())
+		living.push_back(prevchancellor);
+	*/
+
 	auto results = clientAskCrowd(living, { "Yes", "No" }, "Can you agree with the government?" );
-	std::cout << "[Yes=" << results["Yes"] << "] [No=" << results["No"] << "]\n";
+
+
+	Log::write("Yes=");
+	Log::write(std::to_string(results["Yes"]), Log::Colors::GREEN);
+	Log::write(", No=");
+	Log::writeLine(std::to_string(results["No"]), Log::Colors::RED);
 
 	if (results["No"] <= results["Yes"]) { // GOVERNMENT FORMED
 		// if Hitler was the chancellor
 		if (placedFascist >= 3 && roles[chancellor] == Roles::HITLER) {
+			Log::writeLine("\n\n");
+			Log::writeLine("Hitler was the chancellor!", Log::Colors::RED);
+			Log::writeLine();
 			clientInfoAll("Hitler was the chancellor!");
 			STATE = GameStates::END;
+			return;
 		}
 
 		// CARD DRAFTING
@@ -160,7 +209,9 @@ void MyServer::gameRound(std::string president) {
 
 		// Processing the new law
 		std::string newLaw = three.front();
-		std::cout << "The government has made a " << newLaw << " law\n";
+		Log::write("The government has made a ");
+		Log::write(newLaw, newLaw=="Liberal" ? Log::Colors::BLUE : Log::Colors::RED);
+		Log::writeLine(" law");
 		newLaw == "Liberal" ? placedLiberal++ : placedFascist++;
 
 		checkNewLaw(newLaw);
@@ -169,12 +220,13 @@ void MyServer::gameRound(std::string president) {
 	}
 	else { // ANARCHY
 		anarchy++;
-		std::cout << "Anarchy raised to " << anarchy << std::endl;
+		Log::writeLine("Anarchy raised to " + std::to_string(anarchy));
 		if (anarchy == 3) {
 			std::string last = roleToString( cards.back() );
 			last == "Liberal" ? placedLiberal++ : placedFascist++;
 
-			std::cout << "The randomly chosen law is " << last << std::endl;
+			Log::write("The randomly chosen law is ");
+			Log::writeLine(last, last == "Liberal" ? Log::Colors::BLUE : Log::Colors::RED);
 
 			cards.pop_back();
 			checkNewLaw(last);
@@ -210,7 +262,7 @@ void MyServer::assignRoles() {
 		sf::Packet p;
 		std::string msg = "You are a " + roleToString( roles[it->first] );
 
-		if (roles[it->first] == Roles::FASCIST) msg += fascists;
+		if (roles[it->first] == Roles::FASCIST) msg += "\nYour mates: " + fascists;
 
 		p << "info" << msg;
 		it->second->send(p);
@@ -222,19 +274,22 @@ void MyServer::assignRoles() {
 void MyServer::checkNewLaw(std::string law) {
 	if (placedLiberal == 5) {
 		std::string msg = "Liberals won!";
-		std::cout << msg << std::endl;
+		Log::writeLine("\n\n");
+		Log::writeLine(msg, Log::Colors::WHITE * 16 + Log::Colors::BLUE);
+		Log::writeLine();
 		clientInfoAll(msg);
 		STATE = GameStates::END;
 	}
 	else if (placedFascist == 6) {
 		std::string msg = "Fascists won!";
-		std::cout << msg << std::endl;
+		Log::writeLine("\n\n");
+		Log::writeLine(msg, Log::Colors::WHITE * 16 + Log::Colors::RED);
+		Log::writeLine();
 		clientInfoAll(msg);
 		STATE = GameStates::END;
 	}
 	else {
 		if (law == "Fascist") rule.Actions[placedFascist]();
-		else rule.Actions[placedLiberal]();
 	}
 }
 
@@ -263,26 +318,35 @@ std::unordered_map<int, MyServer::Rule> MyServer::generateRules() {
 
 	auto investigate = [=]() {
 		std::string p = clientAskForChoice(president, living, "Choose a player to investigate!");
+		Log::writeLine("The president just investigated " + p);
 		clientInfo(president, p + " is a " + roleToString(roles[p]));
 	};
 
 	auto execution = [=]() {
 		std::string p = clientAskForChoice(president, living, "Choose a player to kill!");
-		clientInfoAll(president + " killed " + p + "!");
+		std::string msg = president + " killed " + p + "!";
+		clientInfoAll(msg);
+		Log::write(msg, Log::Colors::RED * 16);
+		Log::writeLine();
 		living.erase(std::find(living.begin(), living.end(), p));
 
 		if (roles[p] == Roles::HITLER) {
+			Log::writeLine("\n\n");
+			Log::writeLine("Hitler dead!", Log::Colors::BLUE);
+			Log::writeLine();
 			clientInfoAll("Hitler was killed");
 			STATE = GameStates::END;
 		}
 	};
 
 	auto peekLaw = [=]() {
+		Log::writeLine("The president peeking the top law O.O");
 		clientInfo(president, "The next law is " + roleToString(cards.back()));
 	};
 
 	auto chooseNext = [=]() {
 		std::string p = clientAskForChoice(president, living, "Choose the next president!");
+		Log::writeLine(president + " choosed " + p + " for the next president");
 		gameRound(p);
 	};
 

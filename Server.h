@@ -50,7 +50,7 @@ void Server::checkNewConnections() {
         if (client->receive(p) != sf::Socket::Done) std::cout << "failed to receive data\n";
         else {
             p >> name;
-            std::cout << name << " joined the party!\n";
+            std::cout << name << " joined! There are " << clients.size()+1 << " players\n";
         }
 
         char greet[100] = "Welcome in the server!";
@@ -123,8 +123,9 @@ std::string Server::clientAskForChoice(const std::string& clientName,
 {
     // Construct request
     sf::Packet p;
-    p << "ask" << "choice" << desc << choices.size();
+    p << "ask" << "choice" << choices.size();
     for (const std::string& choice : choices) p << choice;
+    p << desc;
 
     // send it
     clients[clientName]->send(p);
@@ -194,8 +195,9 @@ std::unordered_map<std::string, int> Server::clientAskCrowd(const std::vector<st
 
     // Construct request
     sf::Packet request;
-    request << "ask" << "choice" << desc << choices.size();
+    request << "ask" << "choice" << choices.size();
     for (const std::string& choice : choices) request << choice;
+    request << desc;
 
     for (const std::string& person : people) {
         clients[person]->send(request);
